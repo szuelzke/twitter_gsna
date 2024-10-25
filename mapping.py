@@ -63,3 +63,13 @@ user_feature_matrix = lil_matrix((num_users, num_features), dtype=bool)
 # Create mappings for users and features
 user_index_mapping = {user: index for index, user in enumerate(user_set)}
 feature_index_mapping = {feature_id: index for index, feature_id in enumerate(feature_table)}
+
+import json
+
+# Save user and feature mappings
+with open('user_index_mapping.json', 'w') as f:
+    json.dump(user_index_mapping, f)
+with open('feature_index_mapping.json', 'w') as f:
+    json.dump(feature_index_mapping, f)
+
+print("User and feature mappings saved successfully.")
