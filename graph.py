@@ -1,6 +1,6 @@
 import json
 from bokeh.plotting import figure, curdoc
-from bokeh.models import GraphRenderer, StaticLayoutProvider, Circle, MultiLine, HoverTool, ColumnDataSource, TextInput, Button, Triangle
+from bokeh.models import GraphRenderer, StaticLayoutProvider, Circle, MultiLine, HoverTool, ColumnDataSource, TextInput, Button, Div
 from bokeh.layouts import column, row
 import networkx as nx
 import os
@@ -144,13 +144,14 @@ def clear_search():
     plot.x_range.start, plot.x_range.end = -15000, 15000
     plot.y_range.start, plot.y_range.end = -15000, 15000
     search_bar.value = ""
+    cd_output.text = ""  # Clear the community detection output text
 
     # Restore original node and edge colors
     graph_renderer.node_renderer.data_source.data.update(color=original_node_colors)
     highlighted_edge_renderer.edge_renderer.data_source.data.update(start=[], end=[])
 
 # Create "Clear Search" button
-clear_button = Button(label="Clear Search", button_type="warning")
+clear_button = Button(label="Reset", button_type="warning")
 clear_button.on_click(clear_search)
 
 # Define zoom buttons
@@ -173,8 +174,18 @@ zoom_in_button.on_click(zoom_in)
 zoom_out_button = Button(label="Zoom Out", button_type="success")
 zoom_out_button.on_click(zoom_out)
 
-# Layout search, clear, zoom buttons, and plot
-layout = column(row(search_bar, clear_button, zoom_in_button, zoom_out_button), plot)
+# Define Community Detection button and output text
+def community_detection():
+    # community detection in progress
+    cd_output.text = "CD in progress (placeholder, not yet implemented)"
+
+cd_button = Button(label="Community Detection", button_type="primary")
+cd_button.on_click(community_detection)
+
+cd_output = Div(text="")  # Output area for community detection status
+
+# Layout search, clear, zoom buttons, community detection, and plot
+layout = column(row(search_bar, clear_button, zoom_in_button, zoom_out_button), cd_button, cd_output, plot)
 curdoc().add_root(layout)
 
-print("Plot with search, clear, and zoom functionality is ready to be displayed.")
+print("Plot with search, clear, zoom, and community detection functionality is ready to be displayed.")
