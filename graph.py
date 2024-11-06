@@ -1,6 +1,6 @@
 import json
 from bokeh.plotting import figure, curdoc
-from bokeh.models import GraphRenderer, StaticLayoutProvider, Circle, MultiLine, HoverTool, ColumnDataSource, TextInput, Button, Div
+from bokeh.models import Div, GraphRenderer, StaticLayoutProvider, Circle, Square, MultiLine, HoverTool, ColumnDataSource, TextInput, Button
 from bokeh.layouts import column, row
 import networkx as nx
 import os
@@ -41,21 +41,37 @@ for edge in edges:
 with open('user_features.json', 'r', encoding='utf-8') as f:
     user_features = json.load(f)
 
-# Prepare tooltip data with node IDs, features, and ego node status
-node_ids = list(G.nodes)
-node_colors = ["green" if node in ego_id else "blue" for node in node_ids]
-node_sizes = [12 if node in ego_id else 8 for node in node_ids]
-node_tooltips = [
-    f"Node ID: {node}, Features: {', '.join(user_features.get(str(node), []))}, Ego Node: {'Yes' if node in ego_id else 'No'}"
-    for node in node_ids
+# Separate node data for ego and non-ego nodes
+ego_nodes = [node for node in G.nodes if node in ego_id]
+non_ego_nodes = [node for node in G.nodes if node not in ego_id]
+ego_colors = ["blue"] * len(ego_nodes)  # All nodes start as blue
+non_ego_colors = ["blue"] * len(non_ego_nodes)
+ego_sizes = [12] * len(ego_nodes)
+non_ego_sizes = [8] * len(non_ego_nodes)
+
+# Tooltips for nodes
+ego_tooltips = [
+    f"Node ID: {node}, Features: {', '.join(user_features.get(str(node), []))}, Ego Node: Yes"
+    for node in ego_nodes
+]
+non_ego_tooltips = [
+    f"Node ID: {node}, Features: {', '.join(user_features.get(str(node), []))}, Ego Node: No"
+    for node in non_ego_nodes
 ]
 
-# Create ColumnDataSource for the graph's tooltips
-tooltip_source = ColumnDataSource(data=dict(
-    index=node_ids,
-    color=node_colors,
-    size=node_sizes,
-    tooltip=node_tooltips
+# ColumnDataSource for ego and non-ego nodes
+ego_source = ColumnDataSource(data=dict(
+    index=ego_nodes,
+    color=ego_colors,
+    size=ego_sizes,
+    tooltip=ego_tooltips
+))
+
+non_ego_source = ColumnDataSource(data=dict(
+    index=non_ego_nodes,
+    color=non_ego_colors,
+    size=non_ego_sizes,
+    tooltip=non_ego_tooltips
 ))
 
 # Create the Bokeh plot
@@ -67,41 +83,41 @@ plot.axis.visible = False
 graph_layout = {int(node): tuple(pos) for node, pos in layout_data.items()}
 layout_provider = StaticLayoutProvider(graph_layout=graph_layout)
 
-# GraphRenderer for the entire graph's nodes and edges
-graph_renderer = GraphRenderer()
-graph_renderer.node_renderer.data_source = tooltip_source
-graph_renderer.node_renderer.glyph = Circle(size="size", fill_color="color")
-graph_renderer.edge_renderer.data_source.data = dict(
+# GraphRenderer for non-ego nodes (circles)
+non_ego_renderer = GraphRenderer()
+non_ego_renderer.node_renderer.data_source = non_ego_source
+non_ego_renderer.node_renderer.glyph = Circle(size="size", fill_color="color")
+non_ego_renderer.edge_renderer.data_source.data = dict(
     start=[edge[0] for edge in G.edges],
     end=[edge[1] for edge in G.edges],
     line_color=["gray" for _ in G.edges]
 )
-graph_renderer.edge_renderer.glyph = MultiLine(line_color="line_color", line_alpha=0.3, line_width=0.5)
-graph_renderer.layout_provider = layout_provider
+non_ego_renderer.edge_renderer.glyph = MultiLine(line_color="line_color", line_alpha=0.3, line_width=0.5)
+non_ego_renderer.layout_provider = layout_provider
+
+# GraphRenderer for ego nodes (squares)
+ego_renderer = GraphRenderer()
+ego_renderer.node_renderer.data_source = ego_source
+ego_renderer.node_renderer.glyph = Square(size="size", fill_color="color")
+ego_renderer.layout_provider = layout_provider  # No edge renderer needed for ego renderer
 
 # Add main graph renderer for edges and nodes to plot
-plot.renderers.append(graph_renderer)
-
-# GraphRenderer for highlighted edges (will be overlaid on regular edges)
-highlighted_edge_renderer = GraphRenderer()
-highlighted_edge_renderer.node_renderer.data_source = tooltip_source  # Use same node data
-highlighted_edge_renderer.node_renderer.glyph = Circle(size="size", fill_color="color")
-highlighted_edge_renderer.edge_renderer.glyph = MultiLine(line_color="black", line_alpha=1, line_width=1)
-highlighted_edge_renderer.layout_provider = layout_provider
+plot.renderers.append(non_ego_renderer)
+plot.renderers.append(ego_renderer)
 
 # Add hover tool for nodes
 hover_tool = HoverTool(tooltips=[("Tooltip", "@tooltip")])
 plot.add_tools(hover_tool)
 
-# Add highlighted edges after regular edges, before nodes
-plot.renderers.insert(1, highlighted_edge_renderer)
-
 # Create search bar
 search_bar = TextInput(title="Search for Node ID:", placeholder="Enter Node ID")
 
 # Store original colors and edge attributes for reset
-original_node_colors = list(node_colors)
+original_ego_colors = list(ego_colors)
+original_non_ego_colors = list(non_ego_colors)
 original_edge_colors = ["gray" for _ in G.edges]
+original_ego_shapes = ["square"] * len(ego_nodes)
+original_non_ego_shapes = ["circle"] * len(non_ego_nodes)
 
 # Define callback for search
 def search_node(attr, old, new):
@@ -121,20 +137,25 @@ def search_node(attr, old, new):
         plot.y_range.start = y - 200
         plot.y_range.end = y + 200
 
-    # Highlight the searched node and its first-degree edges
-    highlight_colors = ["red" if node == node_id else original_node_colors[i] for i, node in enumerate(node_ids)]
-    edge_start, edge_end = list(graph_renderer.edge_renderer.data_source.data['start']), list(graph_renderer.edge_renderer.data_source.data['end'])
-    highlight_edge_start = [edge_start[i] for i in range(len(edge_start)) if edge_start[i] == node_id or edge_end[i] == node_id]
-    highlight_edge_end = [edge_end[i] for i in range(len(edge_end)) if edge_start[i] == node_id or edge_end[i] == node_id]
-    
-    # Update color data source with highlighted colors
-    graph_renderer.node_renderer.data_source.data.update(color=highlight_colors)
-    
-    # Update highlighted edges renderer data
-    highlighted_edge_renderer.edge_renderer.data_source.data.update(
-        start=highlight_edge_start,
-        end=highlight_edge_end
+    # Highlight the searched node
+    ego_source.data.update(color=["red" if node == node_id else "blue" for node in ego_nodes])
+    non_ego_source.data.update(color=["red" if node == node_id else "blue" for node in non_ego_nodes])
+
+    # Highlight first-degree edges of the searched node
+    first_degree_edges = [edge for edge in G.edges(node_id)]
+    first_degree_edges_start = [edge[0] for edge in first_degree_edges]
+    first_degree_edges_end = [edge[1] for edge in first_degree_edges]
+
+    # Change color of first-degree edges to emphasize them
+    non_ego_renderer.edge_renderer.data_source.data.update(
+        start=[edge[0] for edge in G.edges],
+        end=[edge[1] for edge in G.edges],
+        line_color=["red" if (edge[0] == node_id or edge[1] == node_id) else "gray" for edge in G.edges]
     )
+
+    # Update node shapes to stars for the searched node
+    ego_renderer.node_renderer.glyph = Square(size="size", fill_color="color")  # Ensure we keep it a square for ego nodes
+    non_ego_renderer.node_renderer.glyph = Circle(size="size", fill_color="color")  # Keep it as circle for non-ego nodes
 
 search_bar.on_change("value", search_node)
 
@@ -146,9 +167,14 @@ def clear_search():
     search_bar.value = ""
     cd_output.text = ""  # Clear the community detection output text
 
-    # Restore original node and edge colors
-    graph_renderer.node_renderer.data_source.data.update(color=original_node_colors)
-    highlighted_edge_renderer.edge_renderer.data_source.data.update(start=[], end=[])
+    # Restore original node shapes and colors
+    ego_source.data.update(color=original_ego_colors)
+    non_ego_source.data.update(color=original_non_ego_colors)
+    non_ego_renderer.edge_renderer.data_source.data.update(line_color=original_edge_colors)
+
+    # Reset to square for ego nodes and circle for non-ego nodes
+    ego_renderer.node_renderer.glyph = Square(size="size", fill_color="color")  # Reset to square
+    non_ego_renderer.node_renderer.glyph = Circle(size="size", fill_color="color")  # Reset to circle
 
 # Create "Clear Search" button
 clear_button = Button(label="Reset", button_type="warning")
@@ -184,8 +210,8 @@ cd_button.on_click(community_detection)
 
 cd_output = Div(text="")  # Output area for community detection status
 
-# Layout search, clear, zoom buttons, community detection, and plot
+# Layout search, clear, and plot
 layout = column(row(search_bar, clear_button, zoom_in_button, zoom_out_button), cd_button, cd_output, plot)
 curdoc().add_root(layout)
 
-print("Plot with search, clear, zoom, and community detection functionality is ready to be displayed.")
+print("Plot with ego nodes as squares and non-ego nodes as circles.")
