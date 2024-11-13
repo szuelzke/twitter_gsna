@@ -5,6 +5,8 @@ from bokeh.layouts import column, row
 import networkx as nx
 import os
 import sys
+import community  # Louvain community detection package
+import random  # To generate random colors for each community
 
 # Reconfigure system stdout to use utf-8 encoding
 sys.stdout.reconfigure(encoding='utf-8')
@@ -176,9 +178,6 @@ def clear_search():
     ego_renderer.node_renderer.glyph = Square(size="size", fill_color="color")  # Reset to square
     non_ego_renderer.node_renderer.glyph = Circle(size="size", fill_color="color")  # Reset to circle
 
-# Create "Clear Search" button
-clear_button = Button(label="Reset", button_type="warning")
-clear_button.on_click(clear_search)
 
 # Define zoom buttons
 def zoom_in():
@@ -200,18 +199,53 @@ zoom_in_button.on_click(zoom_in)
 zoom_out_button = Button(label="Zoom Out", button_type="success")
 zoom_out_button.on_click(zoom_out)
 
-# Define Community Detection button and output text
+# Community detection using Louvain method
 def community_detection():
-    # community detection in progress
-    cd_output.text = "CD in progress (placeholder, not yet implemented)"
+    # Perform community detection using the Louvain method
+    partition = community.best_partition(G)
 
-cd_button = Button(label="Community Detection", button_type="primary")
-cd_button.on_click(community_detection)
+    # Assign random colors to each community
+    community_colors = {}
+    num_communities = max(partition.values()) + 1
 
-cd_output = Div(text="")  # Output area for community detection status
+    # Generate a list of distinct colors for each community
+    distinct_colors = [f"#{random.randint(0, 0xFFFFFF):06x}" for _ in range(num_communities)]
 
-# Layout search, clear, and plot
-layout = column(row(search_bar, clear_button, zoom_in_button, zoom_out_button), cd_button, cd_output, plot)
+    for comm in range(num_communities):
+        community_nodes = [node for node, comm_id in partition.items() if comm_id == comm]
+        color = distinct_colors[comm]  # Get a distinct color for each community
+        for node in community_nodes:
+            community_colors[node] = color
+
+    # Print the communities and their colors in the terminal
+    print(f"Detected {num_communities} communities:")
+    for comm in range(num_communities):
+        nodes_in_comm = [node for node, c in partition.items() if c == comm]
+        print(f"Community {comm + 1}:")
+        print(f"Nodes: {nodes_in_comm}")
+        print(f"Color: {community_colors[nodes_in_comm[0]]}")
+
+    # Calculate the modularity score
+    modularity_score = community.modularity(partition, G)
+    print(f"Modularity Score: {modularity_score}")
+
+    # Update node colors based on the community detection
+    ego_source.data.update(color=[community_colors.get(node, "blue") for node in ego_nodes])
+    non_ego_source.data.update(color=[community_colors.get(node, "blue") for node in non_ego_nodes])
+
+    # Display the modularity score on the screen
+    cd_output.text = f"Detected {num_communities} communities.\nModularity Score: {modularity_score:.4f}"
+
+# Community detection button
+community_button = Button(label="Detect Communities", button_type="success")
+community_button.on_click(community_detection)
+
+# Create clear button
+clear_button = Button(label="Reset", button_type="danger")
+clear_button.on_click(clear_search)
+
+# Create the output div for displaying community detection results
+cd_output = Div(width=400, height=400)
+
+layout = column(row(search_bar, clear_button, zoom_in_button, zoom_out_button), community_button, cd_output, plot)
 curdoc().add_root(layout)
-
-print("Plot with ego nodes as squares and non-ego nodes as circles.")
