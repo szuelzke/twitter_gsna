@@ -117,9 +117,6 @@ search_bar = TextInput(title="Search for Node ID:", placeholder="Enter Node ID")
 # Store original colors and edge attributes for reset
 original_ego_colors = list(ego_colors)
 original_non_ego_colors = list(non_ego_colors)
-original_edge_colors = ["gray" for _ in G.edges]
-original_ego_shapes = ["square"] * len(ego_nodes)
-original_non_ego_shapes = ["circle"] * len(non_ego_nodes)
 
 # Define callback for search
 def search_node(attr, old, new):
@@ -163,21 +160,14 @@ search_bar.on_change("value", search_node)
 
 # Define "Clear Search" button callback to reset graph
 def clear_search():
-    # Reset plot ranges to original
     plot.x_range.start, plot.x_range.end = -15000, 15000
     plot.y_range.start, plot.y_range.end = -15000, 15000
     search_bar.value = ""
-    cd_output.text = ""  # Clear the community detection output text
+    cd_output.text = ""
 
-    # Restore original node shapes and colors
+    # Restore original node colors
     ego_source.data.update(color=original_ego_colors)
     non_ego_source.data.update(color=original_non_ego_colors)
-    non_ego_renderer.edge_renderer.data_source.data.update(line_color=original_edge_colors)
-
-    # Reset to square for ego nodes and circle for non-ego nodes
-    ego_renderer.node_renderer.glyph = Square(size="size", fill_color="color")  # Reset to square
-    non_ego_renderer.node_renderer.glyph = Circle(size="size", fill_color="color")  # Reset to circle
-
 
 # Define zoom buttons
 def zoom_in():
@@ -199,52 +189,56 @@ zoom_in_button.on_click(zoom_in)
 zoom_out_button = Button(label="Zoom Out", button_type="success")
 zoom_out_button.on_click(zoom_out)
 
-# Community detection using Louvain method
+# Community detection function
 def community_detection():
-    # Perform community detection using the Louvain method
-    partition = community.best_partition(G)
+    # Load the saved community data from community_detection.json
+    try:
+        with open("community_detection.json", "r") as f:
+            community_data = json.load(f)
+    except FileNotFoundError:
+        cd_output.text = "community_detection.json not found."
+        return
+
+    # Ensure all nodes in G have a community assignment
+    default_community = max(community_data.values(), default=0) + 1  # New community ID for any missing nodes
+    for node in G.nodes:
+        if str(node) not in community_data:
+            community_data[str(node)] = default_community  # Assign to default community
+
+    # Convert community data back to int keys for modularity calculation
+    partition = {int(node): comm_id for node, comm_id in community_data.items()}
+
+    # Calculate modularity score with the updated partition
+    modularity_score = community.modularity(partition, G)
+
+    # Detect the number of communities
+    num_communities = len(set(partition.values()))
 
     # Assign random colors to each community
     community_colors = {}
-    num_communities = max(partition.values()) + 1
-
-    # Generate a list of distinct colors for each community
     distinct_colors = [f"#{random.randint(0, 0xFFFFFF):06x}" for _ in range(num_communities)]
-
-    for comm in range(num_communities):
-        community_nodes = [node for node, comm_id in partition.items() if comm_id == comm]
-        color = distinct_colors[comm]  # Get a distinct color for each community
+    for comm_id in set(partition.values()):
+        color = distinct_colors[comm_id]
+        community_nodes = [node for node, comm in partition.items() if comm == comm_id]
         for node in community_nodes:
             community_colors[node] = color
-
-    # Print the communities and their colors in the terminal
-    print(f"Detected {num_communities} communities:")
-    for comm in range(num_communities):
-        nodes_in_comm = [node for node, c in partition.items() if c == comm]
-        print(f"Community {comm + 1}:")
-        print(f"Nodes: {nodes_in_comm}")
-        print(f"Color: {community_colors[nodes_in_comm[0]]}")
-
-    # Calculate the modularity score
-    modularity_score = community.modularity(partition, G)
-    print(f"Modularity Score: {modularity_score}")
 
     # Update node colors based on the community detection
     ego_source.data.update(color=[community_colors.get(node, "blue") for node in ego_nodes])
     non_ego_source.data.update(color=[community_colors.get(node, "blue") for node in non_ego_nodes])
 
-    # Display the modularity score on the screen
+    # Display the modularity score and number of communities on the screen
     cd_output.text = f"Detected {num_communities} communities.\nModularity Score: {modularity_score:.4f}"
 
 # Community detection button
 community_button = Button(label="Detect Communities", button_type="success")
 community_button.on_click(community_detection)
 
-# Create clear button
+# Clear button
 clear_button = Button(label="Reset", button_type="danger")
 clear_button.on_click(clear_search)
 
-# Create the output div for displaying community detection results
+# Create the output div for community results
 cd_output = Div(width=400, height=400)
 
 layout = column(row(search_bar, clear_button, zoom_in_button, zoom_out_button), community_button, cd_output, plot)
